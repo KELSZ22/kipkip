@@ -1,56 +1,44 @@
-# Welcome to your Expo app 👋
+# Kipkip
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A private, on-device AI life-record app. Type or talk naturally, and the AI companion (Lyn by default) turns it into notes (Kwento) and promises (Pramis). Everything stays on the phone.
 
-## Get started
+Android first. This app needs a development build because op-sqlite has native code, so Expo Go won't work.
 
-1. Install dependencies
+## Run it
 
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+Needs Bun, Android Studio (SDK and JDK), and an emulator or a phone with USB debugging on.
 
 ```bash
-npm run reset-project
+bun install
+export JAVA_HOME=/opt/android-studio/jbr   # or wherever your Android Studio JDK is
+bun run android                            # builds, installs, and starts the app
 ```
 
-This command will move the starter code to the **example** directory and create a blank **src/app** directory where you can start developing.
+The first build takes a while because it compiles SQLCipher and downloads the NDK. After that, `bun run start` is enough unless native dependencies or `app.json` change.
 
-### Other setup steps
+## Checks
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+```bash
+bun run typecheck
+bun run lint
+bun run test
+bunx expo-doctor
+```
 
-## Learn more
+## Layout
 
-To learn more about developing your project with Expo, look at the following resources:
+| Path | What's there |
+| --- | --- |
+| `src/app/` | Screens and navigators (Expo Router) |
+| `src/db/` | Encrypted connection, key handling, schema, migrations, repositories |
+| `src/lib/` | i18n, tone, settings store, helpers |
+| `src/components/` | Shared UI |
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Good to know
 
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- **Encryption:** `"op-sqlite": { "sqlcipher": true }` in `package.json` compiles in SQLCipher. Changing it requires `bunx expo prebuild --clean`. The app refuses to start on a build without encryption.
+- **Encryption key:** a random key is created on first launch and kept in `expo-secure-store`. It never leaves the device, so a database copied to another phone can't be opened.
+- **Migrations:** append to `MIGRATIONS` in `src/db/migrations.ts` and never edit a shipped one. Put one SQL statement in each array item, because op-sqlite's `execute()` only runs the first.
+- **Tests:** database tests run the real SQL on Node's built-in `node:sqlite`, without SQLCipher. Encryption can only be checked on a device.
+- **ESLint:** stays on v9 because `eslint-plugin-react` crashes on v10.
+- **Text:** all user-facing text goes in `src/lib/i18n.ts`, in English, Taglish, and Filipino.
