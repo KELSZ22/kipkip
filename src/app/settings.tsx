@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
@@ -114,6 +115,16 @@ export default function SettingsScreen() {
           increaseLabel={t('settings.checkin.minutesLater')}
           onShift={(direction) => shiftCheckin(direction * 5)}
         />
+      </View>
+
+      <View style={styles.section}>
+        <ThemedText type="smallBold">{t('settings.model')}</ThemedText>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push('/setup')}
+          style={[styles.option, { borderColor: theme.border }]}>
+          <ThemedText type="smallBold">{t('settings.model.open')}</ThemedText>
+        </Pressable>
       </View>
 
       <View style={styles.section}>

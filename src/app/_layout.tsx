@@ -7,6 +7,7 @@ import { useColorScheme } from 'react-native';
 import { BootError } from '@/components/boot-error';
 import { Colors } from '@/constants/theme';
 import { DbOpenError, openDatabase, type DbFailure } from '@/db/client';
+import { startModelLifecycle } from '@/ai/model';
 import { loadSettings } from '@/db/repo/settings';
 import { useT } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings-store';
@@ -40,6 +41,8 @@ export default function RootLayout() {
     });
   }, [attempt]);
 
+  useEffect(() => startModelLifecycle(), []);
+
   return (
     <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
       <StatusBar style="auto" />
@@ -55,6 +58,7 @@ export default function RootLayout() {
           }}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="settings" options={{ title: t('settings.title') }} />
+          <Stack.Screen name="setup" options={{ title: t('setup.title') }} />
           <Stack.Screen name="record/[id]" options={{ title: t('records.edit') }} />
         </Stack>
       )}

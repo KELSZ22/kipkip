@@ -2,7 +2,8 @@ import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
-import { extractByRules, type DraftRecord } from '@/ai/extract';
+import type { DraftRecord } from '@/ai/extract';
+import { organizeEntry } from '@/ai/pipeline';
 import { TabScreen } from '@/components/tab-screen';
 import { ThemedText } from '@/components/themed-text';
 import { MinTouchTarget, Spacing } from '@/constants/theme';
@@ -12,12 +13,14 @@ import { saveCapture } from '@/db/repo/records';
 import { ConfirmCard } from '@/features/capture/confirm-card';
 import { useTheme } from '@/hooks/use-theme';
 import { useT } from '@/lib/i18n';
+import { useSettings } from '@/lib/settings-store';
 
 type RemovedDraft = { draft: DraftRecord; index: number };
 
 export default function CaptureScreen() {
   const t = useT();
   const theme = useTheme();
+  const modelId = useSettings((state) => state.values.model_id);
   const [text, setText] = useState('');
   const [drafts, setDrafts] = useState<DraftRecord[] | null>(null);
   const [removed, setRemoved] = useState<RemovedDraft[]>([]);
@@ -36,7 +39,7 @@ export default function CaptureScreen() {
     setSaved(false);
     try {
       const people = await listPeople(getDb());
-      setDrafts(extractByRules({ text: raw, people, now: new Date() }));
+      setDrafts(await organizeEntry({ text: raw, people, now: new Date(), modelId }));
       setRemoved([]);
       setSaveFailed(false);
       setShowTitleError(false);
@@ -153,7 +156,7 @@ export default function CaptureScreen() {
                   (text.trim().length === 0 || organizing) && styles.disabled,
                 ]}>
                 <ThemedText type="smallBold" themeColor="onAccent">
-                  {t('capture.submit')}
+                  {organizing ? t('capture.organizing') : t('capture.submit')}
                 </ThemedText>
               </Pressable>
             </View>

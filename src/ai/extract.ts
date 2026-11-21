@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 import { parseDates, parsePeople, type DateMention, type KnownPerson, type PersonMention } from '@/ai/rules';
 
 export type RecordKind = 'note' | 'promise';
@@ -12,7 +14,7 @@ export type DraftRecord = {
   personName: string | null;
 };
 
-/** What the on-device model will return in the next milestone. Omitted means rules only. */
+/** A record the on-device model already validated. Omitted means rules only. */
 export type ModelRecord = {
   type: RecordKind;
   title: string;
@@ -185,4 +187,66 @@ export function mergeExtraction(input: {
 
 export function extractByRules(input: { text: string; people: KnownPerson[]; now: Date }): DraftRecord[] {
   return mergeExtraction(input);
+}
+
+const modelOutputSchema = z.object({
+  records: z
+    .array(
+      z.object({
+        type: z.enum(['note', 'promise']),
+        title: z.string().trim().min(1).max(200),
+        body: z.string().max(BODY_LIMIT).optional().nullable(),
+        due_at: z.string().max(40).optional().nullable(),
+        person_name: z.string().trim().max(80).optional().nullable(),
+      }),
+    )
+    .min(1)
+    .max(12),
+});
+
+function dueAtFromModel(value: string | null | undefined): number | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  const parsed = Date.parse(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** Returns null when the model text is not the expected JSON. The caller retries once. */
+export function parseModelOutput(raw: string): ModelRecord[] | null {
+  const cleaned = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '');
+  let data: unknown;
+  try {
+    data = JSON.parse(cleaned);
+  } catch {
+    return null;
+  }
+  const parsed = modelOutputSchema.safeParse(data);
+  if (!parsed.success) return null;
+  return parsed.data.records.map((record) => ({
+    type: record.type,
+    title: record.title,
+    body: record.body?.trim() ? record.body.trim() : null,
+    dueAt: dueAtFromModel(record.due_at),
+    personName: record.person_name?.trim() ? record.person_name.trim() : null,
+  }));
+}
+
+/** Used after the model returns invalid JSON twice. The raw entry is kept as one note. */
+export function plainNote(text: string): DraftRecord[] {
+  const trimmed = text.trim();
+  const title = clip(sentenceCase(trimmed.replace(/[.!?]+$/g, '')), TITLE_LIMIT);
+  return [
+    {
+      key: 'plain',
+      type: 'note',
+      title: title || 'Note',
+      body: trimmed.length > title.length ? clip(trimmed, BODY_LIMIT) : null,
+      dueAt: null,
+      personId: null,
+      personName: null,
+    },
+  ];
 }

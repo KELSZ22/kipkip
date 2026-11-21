@@ -4,11 +4,15 @@ import type { SqlDb } from '@/db/types';
 import { TIME_OF_DAY } from '@/lib/time';
 import { toneSchema } from '@/lib/tone';
 
+const yesNo = z.enum(['yes', 'no']);
+
 const settingsSchema = z.object({
   companion_name: z.string().trim().min(1).max(30),
   tone: toneSchema,
   checkin_time: z.string().regex(TIME_OF_DAY),
   model_id: z.string().min(1).nullable(),
+  setup_done: yesNo,
+  wifi_only: yesNo,
 });
 
 export type Settings = z.infer<typeof settingsSchema>;
@@ -19,6 +23,8 @@ export const DEFAULT_SETTINGS: Settings = {
   tone: 'taglish',
   checkin_time: '21:00',
   model_id: null,
+  setup_done: 'no',
+  wifi_only: 'yes',
 };
 
 export async function loadSettings(db: SqlDb): Promise<Settings> {
@@ -34,6 +40,8 @@ export async function loadSettings(db: SqlDb): Promise<Settings> {
     tone: read('tone'),
     checkin_time: read('checkin_time'),
     model_id: read('model_id'),
+    setup_done: read('setup_done'),
+    wifi_only: read('wifi_only'),
   };
 }
 
