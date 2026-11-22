@@ -11,8 +11,11 @@ import {
   getRecord,
   updateRecord,
   RECORD_STATUSES,
+  type RecordItem,
   type RecordStatus,
 } from '@/db/repo/records';
+import { QuickActions } from '@/features/actions/quick-actions';
+import { resyncPromiseReminders } from '@/features/actions/reminders';
 import { RecordFields } from '@/features/records/record-fields';
 import { useTheme } from '@/hooks/use-theme';
 import { useT } from '@/lib/i18n';
@@ -20,7 +23,7 @@ import { useT } from '@/lib/i18n';
 type LoadState =
   | { status: 'loading' }
   | { status: 'missing' }
-  | { status: 'ready'; draft: DraftRecord; recordStatus: RecordStatus }
+  | { status: 'ready'; draft: DraftRecord; recordStatus: RecordStatus; saved: RecordItem }
   | { status: 'failed' };
 
 function recordId(param: string | string[] | undefined): number {
@@ -36,6 +39,7 @@ export default function RecordScreen() {
   const validId = Number.isInteger(id) && id > 0;
   const [loadedFor, setLoadedFor] = useState<number | null>(null);
   const [load, setLoad] = useState<Exclude<LoadState, { status: 'loading' }>>({ status: 'missing' });
+  const [reload, setReload] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
   const view: LoadState = !validId ? { status: 'missing' } : loadedFor === id ? load : { status: 'loading' };
@@ -51,18 +55,24 @@ export default function RecordScreen() {
           setLoad({ status: 'missing' });
           return;
         }
-        setLoad({
-          status: 'ready',
-          recordStatus: record.status,
-          draft: {
-            key: 'edit',
-            type: record.type,
-            title: record.title,
-            body: record.body,
-            dueAt: record.dueAt,
-            personId: record.personId,
-            personName: record.personName,
-          },
+        setLoad((current) => {
+          if (current.status === 'ready' && current.saved.id === record.id) {
+            return { ...current, saved: record };
+          }
+          return {
+            status: 'ready',
+            recordStatus: record.status,
+            saved: record,
+            draft: {
+              key: 'edit',
+              type: record.type,
+              title: record.title,
+              body: record.body,
+              dueAt: record.dueAt,
+              personId: record.personId,
+              personName: record.personName,
+            },
+          };
         });
       })
       .catch((error: unknown) => {
@@ -74,7 +84,7 @@ export default function RecordScreen() {
     return () => {
       active = false;
     };
-  }, [id, validId]);
+  }, [id, reload, validId]);
 
   const save = async () => {
     if (view.status !== 'ready' || saving || !view.draft.title.trim()) return;
@@ -87,6 +97,7 @@ export default function RecordScreen() {
         { ...view.draft, status: view.draft.type === 'promise' ? view.recordStatus : 'open' },
         Date.now(),
       );
+      await resyncPromiseReminders().catch((error: unknown) => console.error(error));
       router.back();
     } catch (error) {
       console.error(error);
@@ -103,6 +114,7 @@ export default function RecordScreen() {
         style: 'destructive',
         onPress: () => {
           void deleteRecord(getDb(), id)
+            .then(() => resyncPromiseReminders().catch((error: unknown) => console.error(error)))
             .then(() => router.back())
             .catch((error: unknown) => {
               console.error(error);
@@ -127,8 +139,9 @@ export default function RecordScreen() {
           {!view.draft.title.trim() && <ThemedText themeColor="danger">{t('capture.needTitle')}</ThemedText>}
           <RecordFields
             value={view.draft}
-            onChange={(draft) => setLoad({ status: 'ready', draft, recordStatus: view.recordStatus })}
+            onChange={(draft) => setLoad({ status: 'ready', draft, recordStatus: view.recordStatus, saved: view.saved })}
           />
+          <QuickActions record={view.saved} onUpdated={() => setReload((current) => current + 1)} />
           {view.draft.type === 'promise' && (
             <View accessibilityRole="radiogroup" style={styles.row}>
               {RECORD_STATUSES.map((status) => {

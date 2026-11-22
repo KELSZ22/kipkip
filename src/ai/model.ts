@@ -2,7 +2,7 @@ import { Directory, DownloadTask, File, Paths, type DownloadPauseState, type Dow
 import { initLlama, type LlamaContext } from 'llama.rn';
 import { AppState } from 'react-native';
 
-import { EXTRACTION_SCHEMA, EXTRACTION_SYSTEM } from '@/ai/prompts';
+import { CHIKA_SCHEMA, CHIKA_SYSTEM, EXTRACTION_SCHEMA, EXTRACTION_SYSTEM } from '@/ai/prompts';
 import { modelById, MODELS, type ModelSpec } from '@/ai/models';
 
 const BACKGROUND_RELEASE_MS = 3 * 60 * 1000;
@@ -141,6 +141,7 @@ export async function releaseModel(): Promise<void> {
     clearTimeout(releaseTimer);
     releaseTimer = null;
   }
+  if (loading) await loading.catch(() => undefined);
   await releaseLoaded();
 }
 
@@ -156,6 +157,10 @@ async function loadModel(modelId: string): Promise<LlamaContext> {
       n_ctx: 2048,
       n_gpu_layers: 99,
       use_mlock: false,
+      // One vector per note. Completion still uses this same context.
+      embedding: true,
+      pooling_type: 'last',
+      embd_normalize: 2,
     });
     context = next;
     loadedFor = modelId;
@@ -167,6 +172,14 @@ async function loadModel(modelId: string): Promise<LlamaContext> {
   } finally {
     if (loading === pending) loading = null;
   }
+}
+
+/** Starts loading the language model in the background so the next Organize tap does not wait for it. */
+export function warmModel(modelId: string | null): void {
+  if (!modelId) return;
+  const model = modelById(modelId);
+  if (!model || !isInstalled(model)) return;
+  loadModel(modelId).catch((error: unknown) => console.error(error));
 }
 
 export async function completeExtraction(modelId: string, user: string): Promise<string> {
@@ -181,6 +194,35 @@ export async function completeExtraction(modelId: string, user: string): Promise
     response_format: {
       type: 'json_schema',
       json_schema: { strict: true, schema: EXTRACTION_SCHEMA },
+    },
+  });
+  await llama.clearCache(false);
+  return result.text;
+}
+
+/** One L2-normalized vector for a note or a question. All-zero means this build did not embed. */
+export async function embedText(modelId: string, text: string): Promise<number[]> {
+  const llama = await loadModel(modelId);
+  const { embedding } = await llama.embedding(text);
+  if (embedding.length === 0 || embedding.every((value) => value === 0)) {
+    throw new Error('Embedding was empty');
+  }
+  await llama.clearCache(false);
+  return embedding;
+}
+
+export async function completeChika(modelId: string, user: string): Promise<string> {
+  const llama = await loadModel(modelId);
+  const result = await llama.completion({
+    messages: [
+      { role: 'system', content: CHIKA_SYSTEM },
+      { role: 'user', content: user },
+    ],
+    n_predict: 256,
+    temperature: 0.1,
+    response_format: {
+      type: 'json_schema',
+      json_schema: { strict: true, schema: CHIKA_SCHEMA },
     },
   });
   await llama.clearCache(false);

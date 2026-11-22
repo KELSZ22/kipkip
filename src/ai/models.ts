@@ -66,3 +66,21 @@ export function formatBytes(bytes: number): string {
   if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
   return `${Math.round(bytes / 1_000_000)} MB`;
 }
+
+export type SpeechModel = {
+  id: string;
+  url: string;
+  bytes: number;
+  sha256: string;
+};
+
+/**
+ * Multilingual Whisper base, MIT license. One file hears English, Filipino, and Taglish.
+ * Swap this entry to change speech recognition. ggml-small.bin is stronger and about 488 MB.
+ */
+export const WHISPER_MODEL: SpeechModel = {
+  id: 'ggml-base',
+  url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin',
+  bytes: 147_951_465,
+  sha256: '60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe',
+};

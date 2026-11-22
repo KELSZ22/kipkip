@@ -8,6 +8,7 @@ import { MinTouchTarget, Spacing } from '@/constants/theme';
 import { getDb } from '@/db/client';
 import { listPeopleWithRecords, type PersonRow } from '@/db/repo/people';
 import { listRecords, type RecordItem, type RecordType } from '@/db/repo/records';
+import { QuickActions } from '@/features/actions/quick-actions';
 import { useTheme } from '@/hooks/use-theme';
 import { useT, type MessageKey } from '@/lib/i18n';
 import { dateRangeBounds, formatDue, type DateRangeKey } from '@/lib/time';
@@ -26,33 +27,38 @@ export default function RecordsScreen() {
   const [items, setItems] = useState<RecordItem[]>([]);
   const [loadFailed, setLoadFailed] = useState(false);
 
+  const load = useCallback(
+    async (isActive: () => boolean) => {
+      const bounds = dateRangeBounds(range, new Date());
+      try {
+        const db = getDb();
+        const [nextPeople, nextItems] = await Promise.all([
+          listPeopleWithRecords(db, type),
+          listRecords(db, { type, query, personId, from: bounds.from, to: bounds.to }),
+        ]);
+        if (!isActive()) return;
+        setPeople(nextPeople);
+        setItems(nextItems);
+        setPersonId((current) =>
+          current != null && nextPeople.some((person) => person.id === current) ? current : null,
+        );
+        setLoadFailed(false);
+      } catch (error) {
+        console.error(error);
+        if (isActive()) setLoadFailed(true);
+      }
+    },
+    [personId, query, range, type],
+  );
+
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      const bounds = dateRangeBounds(range, new Date());
-      void (async () => {
-        try {
-          const db = getDb();
-          const [nextPeople, nextItems] = await Promise.all([
-            listPeopleWithRecords(db, type),
-            listRecords(db, { type, query, personId, from: bounds.from, to: bounds.to }),
-          ]);
-          if (!active) return;
-          setPeople(nextPeople);
-          setItems(nextItems);
-          setPersonId((current) =>
-            current != null && nextPeople.some((person) => person.id === current) ? current : null,
-          );
-          setLoadFailed(false);
-        } catch (error) {
-          console.error(error);
-          if (active) setLoadFailed(true);
-        }
-      })();
+      void load(() => active);
       return () => {
         active = false;
       };
-    }, [personId, query, range, type]),
+    }, [load]),
   );
 
   return (
@@ -127,21 +133,21 @@ export default function RecordsScreen() {
             loadFailed ? undefined : <ThemedText themeColor="textSecondary">{t('records.empty')}</ThemedText>
           }
           renderItem={({ item }) => (
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => router.push(`/record/${item.id}` as Href)}
-              style={[styles.record, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}>
-              <ThemedText type="smallBold">{item.title}</ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">
-                {[
-                  item.personName,
-                  item.dueAt != null ? formatDue(item.dueAt) : item.type === 'promise' ? t('records.noDue') : null,
-                  item.type === 'promise' ? t(`records.status.${item.status}`) : null,
-                ]
-                  .filter((part) => part != null)
-                  .join(' · ')}
-              </ThemedText>
-            </Pressable>
+            <View style={[styles.record, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}>
+              <Pressable accessibilityRole="button" onPress={() => router.push(`/record/${item.id}` as Href)}>
+                <ThemedText type="smallBold">{item.title}</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  {[
+                    item.personName,
+                    item.dueAt != null ? formatDue(item.dueAt) : item.type === 'promise' ? t('records.noDue') : null,
+                    item.type === 'promise' ? t(`records.status.${item.status}`) : null,
+                  ]
+                    .filter((part) => part != null)
+                    .join(' · ')}
+                </ThemedText>
+              </Pressable>
+              <QuickActions record={item} onUpdated={() => void load(() => true)} />
+            </View>
           )}
         />
       </View>

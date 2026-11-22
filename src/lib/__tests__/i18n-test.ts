@@ -20,12 +20,12 @@ describe('i18n', () => {
   });
 
   it('fills in placeholders per tone', () => {
-    expect(translate('english', 'today.greeting', { name: 'Lyn' })).toBe('Hi, I’m Lyn.');
-    expect(translate('taglish', 'today.greeting', { name: 'Lyn' })).toBe('Hi, ako si Lyn!');
-    expect(translate('filipino', 'today.greeting', { name: 'Lyn' })).toBe('Kumusta, ako si Lyn.');
+    expect(translate('english', 'today.greeting.morning', { name: 'Lyn' })).toBe('Good morning. I’m Lyn.');
+    expect(translate('taglish', 'today.greeting.morning', { name: 'Lyn' })).toBe('Magandang umaga. Ako si Lyn!');
+    expect(translate('filipino', 'today.greeting.evening', { name: 'Lyn' })).toBe('Magandang gabi. Ako si Lyn.');
   });
 
   it('treats a name with special replacement characters literally', () => {
-    expect(translate('english', 'today.greeting', { name: '$& Lyn' })).toBe('Hi, I’m $& Lyn.');
+    expect(translate('english', 'today.greeting.morning', { name: '$& Lyn' })).toBe('Good morning. I’m $& Lyn.');
   });
 });

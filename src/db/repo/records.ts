@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { insertEntry, type EntrySource } from '@/db/repo/entries';
 import { findOrCreatePerson } from '@/db/repo/people';
 import type { SqlDb, SqlRow, SqlRunner } from '@/db/types';
+import { isPreferredApp, type PreferredApp } from '@/lib/links';
 
 export const RECORD_TYPES = ['note', 'promise'] as const;
 export const RECORD_STATUSES = ['open', 'done', 'cancelled'] as const;
@@ -19,6 +20,9 @@ export type RecordItem = {
   dueAt: number | null;
   personId: number | null;
   personName: string | null;
+  personPhone: string | null;
+  personEmail: string | null;
+  preferredApp: PreferredApp | null;
   status: RecordStatus;
   isPrivate: boolean;
   createdAt: number;
@@ -57,7 +61,8 @@ const newRecordSchema = z.object({
 export type NewRecord = z.input<typeof newRecordSchema>;
 
 const SELECT_RECORD = `SELECT r.id, r.entry_id, r.type, r.title, r.body, r.due_at, r.person_id,
-  r.status, r.is_private, r.created_at, r.updated_at, p.display_name AS person_name
+  r.status, r.is_private, r.created_at, r.updated_at, p.display_name AS person_name,
+  p.phone AS person_phone, p.email AS person_email, p.preferred_app
   FROM records r
   LEFT JOIN people p ON p.id = r.person_id`;
 
@@ -75,6 +80,9 @@ function mapRecord(row: SqlRow): RecordItem {
     dueAt: row.due_at == null ? null : Number(row.due_at),
     personId: row.person_id == null ? null : Number(row.person_id),
     personName: textOrNull(row.person_name),
+    personPhone: textOrNull(row.person_phone),
+    personEmail: textOrNull(row.person_email),
+    preferredApp: typeof row.preferred_app === 'string' && isPreferredApp(row.preferred_app) ? row.preferred_app : null,
     status: row.status === 'done' || row.status === 'cancelled' ? row.status : 'open',
     isPrivate: Number(row.is_private) === 1,
     createdAt: Number(row.created_at),
@@ -100,11 +108,12 @@ async function resolvePersonId(
 export async function saveCapture(
   db: SqlDb,
   input: { rawText: string; source: EntrySource; createdAt: number; drafts: NewRecord[] },
-): Promise<void> {
+): Promise<number[]> {
   const rawText = input.rawText.trim();
   const drafts = z.array(newRecordSchema).min(1).parse(input.drafts);
   if (!rawText) throw new Error('Entry text is empty');
 
+  const ids: number[] = [];
   await db.transaction(async (tx) => {
     const entryId = await insertEntry(tx, { rawText, source: input.source, createdAt: input.createdAt });
     for (const draft of drafts) {
@@ -125,8 +134,11 @@ export async function saveCapture(
           input.createdAt,
         ],
       );
+      const inserted = await tx.execute('SELECT last_insert_rowid() AS id');
+      ids.push(Number(inserted.rows[0].id));
     }
   });
+  return ids;
 }
 
 export async function listRecords(db: SqlRunner, filter: RecordFilter): Promise<RecordItem[]> {
@@ -181,8 +193,51 @@ export async function updateRecord(
      WHERE id = ?`,
     [draft.type, draft.title, draft.body, draft.dueAt, personId, draft.status, updatedAt, id],
   );
+  await db.execute('DELETE FROM embeddings WHERE record_id = ?', [id]);
 }
 
 export async function deleteRecord(db: SqlRunner, id: number): Promise<void> {
   await db.execute('DELETE FROM records WHERE id = ?', [id]);
+}
+
+export async function setRecordStatus(
+  db: SqlRunner,
+  id: number,
+  status: RecordStatus,
+  updatedAt: number,
+): Promise<void> {
+  await db.execute('UPDATE records SET status = ?, updated_at = ? WHERE id = ?', [status, updatedAt, id]);
+  await db.execute('DELETE FROM embeddings WHERE record_id = ?', [id]);
+}
+
+/** Open, non-private promises due before the end of today, including ones that slipped past. */
+export async function listPromisesThrough(db: SqlRunner, untilExclusive: number): Promise<RecordItem[]> {
+  const { rows } = await db.execute(
+    `${SELECT_RECORD}
+     WHERE r.type = 'promise' AND r.status = 'open' AND r.is_private = 0
+       AND r.due_at IS NOT NULL AND r.due_at < ?
+     ORDER BY r.due_at, r.id`,
+    [untilExclusive],
+  );
+  return rows.map(mapRecord);
+}
+
+export type NoteStamp = { id: number; createdAt: number };
+
+/** Non-private notes, reduced to the fields the Today screen needs to pick one. */
+export async function listNoteStamps(db: SqlRunner): Promise<NoteStamp[]> {
+  const { rows } = await db.execute(
+    `SELECT id, created_at FROM records WHERE type = 'note' AND is_private = 0 ORDER BY id`,
+  );
+  return rows.map((row) => ({ id: Number(row.id), createdAt: Number(row.created_at) }));
+}
+
+/** Open, non-private promises that have a due time. These are the ones that get a reminder. */
+export async function listDuePromises(db: SqlRunner): Promise<RecordItem[]> {
+  const { rows } = await db.execute(
+    `${SELECT_RECORD}
+     WHERE r.type = 'promise' AND r.status = 'open' AND r.is_private = 0 AND r.due_at IS NOT NULL
+     ORDER BY r.due_at, r.id`,
+  );
+  return rows.map(mapRecord);
 }

@@ -1,3 +1,8 @@
+/** Whole local days since the Unix epoch, so a question can rotate without depending on the clock time. */
+export function localDayNumber(day: Date): number {
+  return Math.floor(Date.UTC(day.getFullYear(), day.getMonth(), day.getDate()) / 86_400_000);
+}
+
 /** Times of day are stored as 24-hour "HH:MM" strings. */
 export const TIME_OF_DAY = /^([01]\d|2[0-3]):[0-5]\d$/;
 

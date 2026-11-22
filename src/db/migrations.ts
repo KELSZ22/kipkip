@@ -1,8 +1,20 @@
 import { RECORD_INDEXES, recordsTable, SCHEMA_V1 } from '@/db/schema';
 import type { SqlDb, SqlRunner } from '@/db/types';
 
+/**
+ * Email is stored when a person is linked to a contact, so mailto works without
+ * reading the address book again. SCHEMA_V1 already shipped without this column.
+ */
+const SCHEMA_V2 = ['ALTER TABLE people ADD COLUMN email TEXT'] as const;
+
+/**
+ * Which model produced a vector. A row from an older model is ignored and written again,
+ * because vectors from different models are not comparable.
+ */
+const SCHEMA_V3 = ["ALTER TABLE embeddings ADD COLUMN model_id TEXT NOT NULL DEFAULT ''"] as const;
+
 /** Append only: index + 1 is the schema version stored in `PRAGMA user_version`. */
-export const MIGRATIONS: readonly (readonly string[])[] = [SCHEMA_V1];
+export const MIGRATIONS: readonly (readonly string[])[] = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
 

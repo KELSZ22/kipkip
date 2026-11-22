@@ -5,6 +5,8 @@ import { useEffect, useState } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { BootError } from '@/components/boot-error';
+import { usePromiseReminders } from '@/features/actions/pramis';
+import { useCheckin } from '@/features/checkin/schedule';
 import { Colors } from '@/constants/theme';
 import { DbOpenError, openDatabase, type DbFailure } from '@/db/client';
 import { startModelLifecycle } from '@/ai/model';
@@ -42,6 +44,8 @@ export default function RootLayout() {
   }, [attempt]);
 
   useEffect(() => startModelLifecycle(), []);
+  usePromiseReminders(boot.status === 'ready');
+  useCheckin(boot.status === 'ready');
 
   return (
     <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
@@ -60,6 +64,7 @@ export default function RootLayout() {
           <Stack.Screen name="settings" options={{ title: t('settings.title') }} />
           <Stack.Screen name="setup" options={{ title: t('setup.title') }} />
           <Stack.Screen name="record/[id]" options={{ title: t('records.edit') }} />
+          <Stack.Screen name="checkin" options={{ title: t('checkin.title') }} />
         </Stack>
       )}
     </ThemeProvider>

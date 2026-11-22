@@ -1,6 +1,13 @@
 import type { SqlRunner } from '@/db/types';
+import { isPreferredApp, type PreferredApp } from '@/lib/links';
 
 export type PersonRow = { id: number; displayName: string };
+
+export type LinkedContact = {
+  contactId: string;
+  phone: string | null;
+  email: string | null;
+};
 
 export async function listPeople(db: SqlRunner): Promise<PersonRow[]> {
   const { rows } = await db.execute('SELECT id, display_name FROM people ORDER BY display_name COLLATE NOCASE, id');
@@ -31,4 +38,18 @@ export async function findOrCreatePerson(db: SqlRunner, name: string, createdAt:
   await db.execute('INSERT INTO people (display_name, created_at) VALUES (?, ?)', [trimmed, createdAt]);
   const inserted = await db.execute('SELECT last_insert_rowid() AS id');
   return Number(inserted.rows[0].id);
+}
+
+export async function linkPersonContact(db: SqlRunner, id: number, contact: LinkedContact): Promise<void> {
+  await db.execute('UPDATE people SET contact_id = ?, phone = ?, email = ? WHERE id = ?', [
+    contact.contactId,
+    contact.phone,
+    contact.email,
+    id,
+  ]);
+}
+
+export async function setPreferredApp(db: SqlRunner, id: number, app: PreferredApp): Promise<void> {
+  if (!isPreferredApp(app)) throw new Error('Unknown app');
+  await db.execute('UPDATE people SET preferred_app = ? WHERE id = ?', [app, id]);
 }

@@ -1,7 +1,19 @@
 import { migrate } from '@/db/migrations';
-import { findOrCreatePerson } from '@/db/repo/people';
-import { deleteRecord, getRecord, listRecords, saveCapture, updateRecord } from '@/db/repo/records';
+import { clearPendingAction, getPendingAction, setPendingAction } from '@/db/repo/follow-up';
+import { findOrCreatePerson, linkPersonContact, setPreferredApp } from '@/db/repo/people';
+import {
+  deleteRecord,
+  getRecord,
+  listDuePromises,
+  listNoteStamps,
+  listPromisesThrough,
+  listRecords,
+  saveCapture,
+  setRecordStatus,
+  updateRecord,
+} from '@/db/repo/records';
 import { dateRangeBounds } from '@/lib/time';
+import { pickResurfaced } from '@/features/today/baon';
 
 import { createTestDb } from './test-db';
 
@@ -56,6 +68,15 @@ describe('records repo', () => {
     expect(new Set(notes.map((record) => record.personId)).size).toBe(1);
     expect(notes[1]?.personName).toBe('Mark');
     expect(await findOrCreatePerson(db, 'ANGEL', NOW)).toBe(promises[0]?.personId);
+
+    const ids = await saveCapture(db, {
+      rawText: 'One more',
+      source: 'text',
+      createdAt: NOW + 2,
+      drafts: [{ type: 'note', title: 'Later', body: null, dueAt: null, personId: null, personName: null }],
+    });
+    expect(ids).toHaveLength(1);
+    expect(await getRecord(db, ids[0] ?? 0)).toMatchObject({ title: 'Later' });
   });
 
   it('searches, filters by person and date, then updates and deletes', async () => {
@@ -125,6 +146,65 @@ describe('records repo', () => {
 
     await deleteRecord(db, angel!.id);
     expect(await getRecord(db, angel!.id)).toBeNull();
+  });
+
+  it('remembers a linked contact and lists only open promises that are due', async () => {
+    const [id] = await saveCapture(db, {
+      rawText: 'Call Angel',
+      source: 'text',
+      createdAt: NOW,
+      drafts: [
+        { type: 'promise', title: 'Call Angel', body: null, dueAt: TONIGHT, personId: null, personName: 'Angel' },
+        { type: 'promise', title: 'Sometime', body: null, dueAt: null, personId: null, personName: 'Mark' },
+      ],
+    });
+    const promise = await getRecord(db, id);
+    expect(promise?.personId).toBeTruthy();
+    await linkPersonContact(db, promise!.personId!, { contactId: 'contact-1', phone: '+639171234567', email: 'angel@example.com' });
+    await setPreferredApp(db, promise!.personId!, 'whatsapp');
+
+    expect(await getRecord(db, id)).toMatchObject({
+      personPhone: '+639171234567',
+      personEmail: 'angel@example.com',
+      preferredApp: 'whatsapp',
+    });
+    expect((await listDuePromises(db)).map((record) => record.title)).toEqual(['Call Angel']);
+
+    await setRecordStatus(db, id, 'done', NOW + 1);
+    expect(await listDuePromises(db)).toEqual([]);
+
+    await setPendingAction(db, { recordId: id, app: 'call', who: 'Angel' });
+    expect(await getPendingAction(db)).toEqual({ recordId: id, app: 'call', who: 'Angel' });
+    await db.execute(`UPDATE settings SET value = 'nope' WHERE key = 'pending_action'`);
+    expect(await getPendingAction(db)).toBeNull();
+    await clearPendingAction(db);
+    expect(await getPendingAction(db)).toBeNull();
+  });
+
+  it('keeps today to open promises due by the end of the day, and leaves private notes out', async () => {
+    const yesterday = new Date(2026, 2, 10, 9).getTime();
+    await saveCapture(db, {
+      rawText: 'Today',
+      source: 'text',
+      createdAt: yesterday,
+      drafts: [
+        { type: 'promise', title: 'Overdue', body: null, dueAt: yesterday, personId: null, personName: null },
+        { type: 'promise', title: 'Tonight', body: null, dueAt: TONIGHT, personId: null, personName: null },
+        { type: 'promise', title: 'Tomorrow', body: null, dueAt: TOMORROW, personId: null, personName: null },
+        { type: 'promise', title: 'Done already', body: null, dueAt: TONIGHT, personId: null, personName: null, status: 'done' },
+        { type: 'note', title: 'Old kwento', body: 'From yesterday', dueAt: null, personId: null, personName: null },
+        { type: 'note', title: 'Secret', body: null, dueAt: null, personId: null, personName: null },
+      ],
+    });
+    const secret = (await listRecords(db, { type: 'note', query: 'Secret', personId: null, from: null, to: null }))[0];
+    await db.execute('UPDATE records SET is_private = 1 WHERE id = ?', [secret?.id]);
+
+    const end = dateRangeBounds('today', new Date(NOW)).to ?? NOW;
+    expect((await listPromisesThrough(db, end)).map((record) => record.title)).toEqual(['Overdue', 'Tonight']);
+
+    const picked = pickResurfaced(await listNoteStamps(db), new Date(NOW));
+    expect(picked?.kind).toBe('older');
+    expect((await getRecord(db, picked?.id ?? 0))?.title).toBe('Old kwento');
   });
 
   it('rejects an empty title without writing an entry', async () => {

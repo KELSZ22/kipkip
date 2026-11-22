@@ -1,4 +1,4 @@
-import { chooseTier, formatBytes, modelForTier } from '@/ai/models';
+import { chooseTier, formatBytes, modelForTier, WHISPER_MODEL } from '@/ai/models';
 
 const GIBIBYTE = 1024 ** 3;
 
@@ -22,5 +22,13 @@ describe('chooseTier', () => {
     expect(modelForTier('small').bytes).toBeGreaterThan(modelForTier('tiny').bytes);
     expect(modelForTier('large').sha256).toHaveLength(64);
     expect(formatBytes(modelForTier('tiny').bytes)).toBe('491 MB');
+  });
+});
+
+describe('whisper model', () => {
+  it('points at the multilingual base file', () => {
+    expect(WHISPER_MODEL.id).toBe('ggml-base');
+    expect(WHISPER_MODEL.sha256).toHaveLength(64);
+    expect(formatBytes(WHISPER_MODEL.bytes)).toBe('148 MB');
   });
 });

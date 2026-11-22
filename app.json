@@ -20,7 +20,13 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.kelszdev.kipkip",
-      "allowBackup": false
+      "allowBackup": false,
+      "permissions": [
+        "android.permission.SCHEDULE_EXACT_ALARM"
+      ],
+      "blockedPermissions": [
+        "android.permission.WRITE_CONTACTS"
+      ]
     },
     "plugins": [
       "expo-router",
@@ -33,7 +39,31 @@
         }
       ],
       "expo-secure-store",
-      "llama.rn"
+      "llama.rn",
+      [
+        "expo-notifications",
+        {
+          "color": "#0F6F66",
+          "enableRemoteNotifications": false
+        }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Kipkip links a contact only when you choose one for a Pramis. Contacts stay on this phone."
+        }
+      ],
+      "./plugins/with-action-queries",
+      "./plugins/with-whisper-proguard",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Kipkip uses the microphone so you can speak a note. The recording stays on this phone.",
+          "recordAudioAndroid": true,
+          "enableBackgroundRecording": false,
+          "enableBackgroundPlayback": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

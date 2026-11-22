@@ -17,6 +17,7 @@ import { ThemedText } from '@/components/themed-text';
 import { MinTouchTarget, Spacing } from '@/constants/theme';
 import { getDb } from '@/db/client';
 import type { SettingKey, Settings } from '@/db/repo/settings';
+import { syncCheckin } from '@/features/checkin/schedule';
 import { useTheme } from '@/hooks/use-theme';
 import { useT, type MessageKey } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings-store';
@@ -43,6 +44,9 @@ export default function SetupScreen() {
     try {
       await update(getDb(), key, value);
       setSaveFailed(false);
+      if (key === 'tone' || key === 'companion_name' || key === 'checkin_time' || key === 'setup_done') {
+        await syncCheckin().catch((cause: unknown) => console.error(cause));
+      }
       return true;
     } catch (cause) {
       console.error(cause);

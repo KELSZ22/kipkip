@@ -31,6 +31,28 @@ export const EXTRACTION_SYSTEM = [
   'body is a short detail, or an empty string.',
 ].join('\n');
 
+export const CHIKA_SCHEMA = {
+  type: 'object',
+  properties: {
+    answer: { type: 'string' },
+    source_ids: { type: 'array', items: { type: 'integer' } },
+  },
+  required: ['answer', 'source_ids'],
+} as const;
+
+export const CHIKA_SYSTEM = [
+  'You answer a question using only the numbered records you are given.',
+  'If those records do not contain the answer, return an empty answer and an empty source_ids list.',
+  'Do not add facts that are not written in the records.',
+  'source_ids must be ids copied from the records. Never invent an id.',
+  'Write the answer in the question\'s language, in one or two sentences.',
+].join('\n');
+
+export function chikaUser(question: string, records: readonly { id: number; document: string }[]): string {
+  const lines = records.map((record) => `[${record.id}] ${record.document}`);
+  return `Question: ${question}\n\nRecords:\n${lines.join('\n')}`;
+}
+
 export function extractionUser(text: string, now: Date, people: readonly string[]): string {
   const known = people.length > 0 ? people.join(', ') : 'none';
   return `Now: ${now.toISOString()}\nKnown people: ${known}\n\nEntry:\n${text}`;

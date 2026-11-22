@@ -1,6 +1,7 @@
 import {
   dropLegacyExpenseColumns,
   getSchemaVersion,
+  MIGRATIONS,
   migrate,
   NewerSchemaError,
   SCHEMA_VERSION,
@@ -70,6 +71,17 @@ describe('migrate', () => {
     await db.execute(`PRAGMA user_version = ${SCHEMA_VERSION + 1}`);
 
     await expect(migrate(db)).rejects.toBeInstanceOf(NewerSchemaError);
+  });
+
+  it('adds email to a database created before contact linking', async () => {
+    await migrate(db, MIGRATIONS.slice(0, 1));
+    expect(await getSchemaVersion(db)).toBe(1);
+
+    await migrate(db);
+
+    const columns = await db.execute('PRAGMA table_info(people)');
+    expect(columns.rows.map((row) => row.name)).toContain('email');
+    expect(await getSchemaVersion(db)).toBe(SCHEMA_VERSION);
   });
 
   it('applies the record defaults', async () => {

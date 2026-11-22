@@ -16,6 +16,7 @@ describe('settings repo', () => {
     expect(await loadSettings(db)).toEqual(DEFAULT_SETTINGS);
     expect(DEFAULT_SETTINGS.companion_name).toBe('Lyn');
     expect(DEFAULT_SETTINGS.checkin_time).toBe('21:00');
+    expect(DEFAULT_SETTINGS.checkin_enabled).toBe('yes');
   });
 
   it('saves and overwrites values', async () => {

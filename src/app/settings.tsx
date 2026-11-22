@@ -1,11 +1,14 @@
+import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { MinTouchTarget, Spacing } from '@/constants/theme';
 import { getDb, getDbInfo } from '@/db/client';
 import type { SettingKey, Settings } from '@/db/repo/settings';
+import { resyncPromiseReminders } from '@/features/actions/reminders';
+import { syncCheckin } from '@/features/checkin/schedule';
 import { useTheme } from '@/hooks/use-theme';
 import { useT, type MessageKey } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings-store';
@@ -28,6 +31,13 @@ export default function SettingsScreen() {
     } catch (error) {
       console.error(error);
       setSaveFailed(true);
+      return;
+    }
+    if (key === 'tone' || key === 'companion_name') {
+      await resyncPromiseReminders().catch((error: unknown) => console.error(error));
+    }
+    if (key === 'tone' || key === 'companion_name' || key === 'checkin_time' || key === 'checkin_enabled') {
+      await syncCheckin().catch((error: unknown) => console.error(error));
     }
   };
 
@@ -115,7 +125,36 @@ export default function SettingsScreen() {
           increaseLabel={t('settings.checkin.minutesLater')}
           onShift={(direction) => shiftCheckin(direction * 5)}
         />
+        <ThemedText type="small" themeColor="textSecondary">
+          {t('settings.checkin.hint')}
+        </ThemedText>
+        <Pressable
+          accessibilityRole="switch"
+          accessibilityState={{ checked: values.checkin_enabled === 'yes' }}
+          onPress={() => save('checkin_enabled', values.checkin_enabled === 'yes' ? 'no' : 'yes')}
+          style={[
+            styles.option,
+            { borderColor: values.checkin_enabled === 'yes' ? theme.accent : theme.border },
+            values.checkin_enabled === 'yes' && { backgroundColor: theme.accent },
+          ]}>
+          <ThemedText type="smallBold" themeColor={values.checkin_enabled === 'yes' ? 'onAccent' : 'text'}>
+            {t(values.checkin_enabled === 'yes' ? 'settings.checkin.on' : 'settings.checkin.off')}
+          </ThemedText>
+        </Pressable>
       </View>
+
+      {Platform.OS === 'android' && (
+        <View style={styles.section}>
+          <ThemedText type="smallBold">{t('settings.alarms')}</ThemedText>
+          <ThemedText themeColor="textSecondary">{t('settings.alarms.hint')}</ThemedText>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => void Notifications.requestExactAlarmPermissionsAsync()}
+            style={[styles.option, { borderColor: theme.border }]}>
+            <ThemedText type="smallBold">{t('settings.alarms.allow')}</ThemedText>
+          </Pressable>
+        </View>
+      )}
 
       <View style={styles.section}>
         <ThemedText type="smallBold">{t('settings.model')}</ThemedText>
