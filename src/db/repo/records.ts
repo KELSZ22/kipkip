@@ -29,12 +29,16 @@ export type RecordItem = {
   updatedAt: number;
 };
 
+export type RecordVisibility = 'public' | 'private';
+
 export type RecordFilter = {
   type: RecordType;
   query: string;
   personId: number | null;
   from: number | null;
   to: number | null;
+  /** Public lists hide the vault. The vault asks for the private ones. */
+  visibility?: RecordVisibility;
 };
 
 const newRecordSchema = z.object({
@@ -56,6 +60,8 @@ const newRecordSchema = z.object({
     .nullable()
     .transform((value) => value || null),
   status: z.enum(RECORD_STATUSES).default('open'),
+  /** Omitted on update leaves the current flag alone. On insert, omitted means public. */
+  isPrivate: z.boolean().optional(),
 });
 
 export type NewRecord = z.input<typeof newRecordSchema>;
@@ -121,7 +127,7 @@ export async function saveCapture(
       await tx.execute(
         `INSERT INTO records (
            entry_id, type, title, body, due_at, person_id, status, is_private, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           entryId,
           draft.type,
@@ -130,6 +136,7 @@ export async function saveCapture(
           draft.dueAt,
           personId,
           draft.status,
+          draft.isPrivate ? 1 : 0,
           input.createdAt,
           input.createdAt,
         ],
@@ -145,9 +152,11 @@ export async function listRecords(db: SqlRunner, filter: RecordFilter): Promise<
   const query = filter.query.trim();
   const like = query ? likeContains(query) : null;
   const when = `CASE WHEN r.type = 'note' THEN r.created_at ELSE COALESCE(r.due_at, r.created_at) END`;
+  const visibility = filter.visibility ?? 'public';
   const { rows } = await db.execute(
     `${SELECT_RECORD}
      WHERE r.type = ?
+       AND r.is_private = ?
        AND (? IS NULL OR r.title LIKE ? ESCAPE '\\' OR IFNULL(r.body, '') LIKE ? ESCAPE '\\'
             OR IFNULL(p.display_name, '') LIKE ? ESCAPE '\\')
        AND (? IS NULL OR r.person_id = ?)
@@ -159,6 +168,7 @@ export async function listRecords(db: SqlRunner, filter: RecordFilter): Promise<
        r.created_at DESC`,
     [
       filter.type,
+      visibility === 'private' ? 1 : 0,
       like,
       like,
       like,
@@ -187,13 +197,83 @@ export async function updateRecord(
 ): Promise<void> {
   const draft = newRecordSchema.parse(input);
   const personId = await resolvePersonId(db, draft.personId, draft.personName, updatedAt);
+  const privacy = draft.isPrivate == null ? null : draft.isPrivate ? 1 : 0;
   await db.execute(
     `UPDATE records
-     SET type = ?, title = ?, body = ?, due_at = ?, person_id = ?, status = ?, updated_at = ?
+     SET type = ?, title = ?, body = ?, due_at = ?, person_id = ?, status = ?,
+         is_private = CASE WHEN ? IS NULL THEN is_private ELSE ? END,
+         updated_at = ?
      WHERE id = ?`,
-    [draft.type, draft.title, draft.body, draft.dueAt, personId, draft.status, updatedAt, id],
+    [draft.type, draft.title, draft.body, draft.dueAt, personId, draft.status, privacy, privacy, updatedAt, id],
   );
   await db.execute('DELETE FROM embeddings WHERE record_id = ?', [id]);
+}
+
+/** Hides or shows one record. The embedding is dropped either way so Chika cannot keep a private vector. */
+export async function setRecordPrivate(
+  db: SqlRunner,
+  id: number,
+  isPrivate: boolean,
+  updatedAt: number,
+): Promise<void> {
+  await db.execute('UPDATE records SET is_private = ?, updated_at = ? WHERE id = ?', [
+    isPrivate ? 1 : 0,
+    updatedAt,
+    id,
+  ]);
+  await db.execute('DELETE FROM embeddings WHERE record_id = ?', [id]);
+}
+
+export type ExportRow = {
+  type: RecordType;
+  title: string;
+  body: string | null;
+  personName: string | null;
+  status: RecordStatus;
+  dueAt: number | null;
+  createdAt: number;
+};
+
+/** Rows for one export. Public and private are never mixed in the same call. */
+export async function listExportRows(db: SqlRunner, isPrivate: boolean): Promise<ExportRow[]> {
+  const { rows } = await db.execute(
+    `SELECT r.type, r.title, r.body, r.status, r.due_at, r.created_at, p.display_name AS person_name
+     FROM records r
+     LEFT JOIN people p ON p.id = r.person_id
+     WHERE r.is_private = ?
+     ORDER BY r.created_at, r.id`,
+    [isPrivate ? 1 : 0],
+  );
+  return rows.map((row) => ({
+    type: row.type === 'promise' ? 'promise' : 'note',
+    title: String(row.title),
+    body: textOrNull(row.body),
+    personName: textOrNull(row.person_name),
+    status: row.status === 'done' || row.status === 'cancelled' ? row.status : 'open',
+    dueAt: row.due_at == null ? null : Number(row.due_at),
+    createdAt: Number(row.created_at),
+  }));
+}
+
+export type RerunEntry = { id: number; rawText: string; createdAt: number };
+
+/**
+ * Entries that can be organized again. If any record on an entry is private, the whole
+ * entry is skipped: the raw text cannot be split, and it must not be sent back to the model.
+ */
+export async function listRerunEntries(db: SqlRunner): Promise<RerunEntry[]> {
+  const { rows } = await db.execute(
+    `SELECT e.id, e.raw_text, e.created_at
+     FROM entries e
+     WHERE EXISTS (SELECT 1 FROM records r WHERE r.entry_id = e.id AND r.is_private = 0)
+       AND NOT EXISTS (SELECT 1 FROM records r WHERE r.entry_id = e.id AND r.is_private = 1)
+     ORDER BY e.id`,
+  );
+  return rows.map((row) => ({
+    id: Number(row.id),
+    rawText: String(row.raw_text),
+    createdAt: Number(row.created_at),
+  }));
 }
 
 export async function deleteRecord(db: SqlRunner, id: number): Promise<void> {

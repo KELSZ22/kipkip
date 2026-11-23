@@ -1,14 +1,17 @@
 import { migrate } from '@/db/migrations';
 import { clearPendingAction, getPendingAction, setPendingAction } from '@/db/repo/follow-up';
-import { findOrCreatePerson, linkPersonContact, setPreferredApp } from '@/db/repo/people';
+import { findOrCreatePerson, linkPersonContact, listPeopleForExtraction, setPreferredApp } from '@/db/repo/people';
 import {
   deleteRecord,
   getRecord,
   listDuePromises,
+  listExportRows,
   listNoteStamps,
   listPromisesThrough,
   listRecords,
+  listRerunEntries,
   saveCapture,
+  setRecordPrivate,
   setRecordStatus,
   updateRecord,
 } from '@/db/repo/records';
@@ -219,5 +222,72 @@ describe('records repo', () => {
 
     const { rows } = await db.execute('SELECT count(*) AS count FROM entries');
     expect(Number(rows[0].count)).toBe(0);
+  });
+
+  it('keeps private records out of public lists, extraction, and the public export', async () => {
+    await saveCapture(db, {
+      rawText: 'Public lunch with Mark',
+      source: 'text',
+      createdAt: MARCH_FIRST,
+      drafts: [
+        { type: 'note', title: 'Lunch with Mark', body: null, dueAt: null, personId: null, personName: 'Mark' },
+      ],
+    });
+    await saveCapture(db, {
+      rawText: 'Secret call to Angel',
+      source: 'text',
+      createdAt: NOW,
+      drafts: [
+        {
+          type: 'note',
+          title: 'Secret',
+          body: 'only for me',
+          dueAt: null,
+          personId: null,
+          personName: 'Angel',
+          isPrivate: true,
+        },
+        {
+          type: 'promise',
+          title: 'Call Angel quietly',
+          body: 'She said "soon"',
+          dueAt: TONIGHT,
+          personId: null,
+          personName: 'Angel',
+          isPrivate: true,
+        },
+      ],
+    });
+
+    const publicNotes = await listRecords(db, { type: 'note', query: '', personId: null, from: null, to: null });
+    expect(publicNotes.map((record) => record.title)).toEqual(['Lunch with Mark']);
+    const vault = await listRecords(db, {
+      type: 'note',
+      query: '',
+      personId: null,
+      from: null,
+      to: null,
+      visibility: 'private',
+    });
+    expect(vault.map((record) => record.title)).toEqual(['Secret']);
+
+    expect((await listPeopleForExtraction(db)).map((person) => person.displayName)).toEqual(['Mark']);
+    expect((await listRerunEntries(db)).map((entry) => entry.rawText)).toEqual(['Public lunch with Mark']);
+    expect((await listExportRows(db, false)).map((row) => row.title)).toEqual(['Lunch with Mark']);
+    expect((await listExportRows(db, true)).map((row) => row.title).sort()).toEqual(['Call Angel quietly', 'Secret']);
+    expect(await listDuePromises(db)).toEqual([]);
+
+    const secret = vault[0];
+    await updateRecord(
+      db,
+      secret?.id ?? 0,
+      { type: 'note', title: 'Secret renamed', body: null, dueAt: null, personId: null, personName: null },
+      NOW + 1,
+    );
+    expect((await getRecord(db, secret?.id ?? 0))?.isPrivate).toBe(true);
+
+    await setRecordPrivate(db, secret?.id ?? 0, false, NOW + 2);
+    expect((await getRecord(db, secret?.id ?? 0))?.isPrivate).toBe(false);
+    expect((await listPeopleForExtraction(db)).map((person) => person.displayName)).toEqual(['Mark']);
   });
 });

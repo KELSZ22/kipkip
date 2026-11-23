@@ -4,6 +4,7 @@ import type { DraftRecord } from '@/ai/extract';
 import { ThemedText } from '@/components/themed-text';
 import { MinTouchTarget, Spacing } from '@/constants/theme';
 import { RecordFields } from '@/features/records/record-fields';
+import { PrivateSwitch } from '@/features/vault/private-switch';
 import { useTheme } from '@/hooks/use-theme';
 import { useT } from '@/lib/i18n';
 
@@ -56,6 +57,13 @@ export function ConfirmCard({
       {drafts.map((draft) => (
         <View key={draft.key} style={[styles.card, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
           <RecordFields value={draft} onChange={onChange} />
+          <PrivateSwitch
+            value={draft.isPrivate === true}
+            onChange={(isPrivate) => onChange({ ...draft, isPrivate })}
+          />
+          <ThemedText type="small" themeColor="textSecondary">
+            {t('vault.privateHint')}
+          </ThemedText>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={t('capture.delete', { title: draft.title || t('records.fieldTitle') })}

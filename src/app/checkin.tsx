@@ -8,7 +8,7 @@ import { organizeEntry } from '@/ai/pipeline';
 import { ThemedText } from '@/components/themed-text';
 import { MinTouchTarget, Spacing } from '@/constants/theme';
 import { getDb } from '@/db/client';
-import { listPeople } from '@/db/repo/people';
+import { listPeopleForExtraction } from '@/db/repo/people';
 import { saveCapture } from '@/db/repo/records';
 import { resyncPromiseReminders } from '@/features/actions/reminders';
 import { ConfirmCard } from '@/features/capture/confirm-card';
@@ -49,7 +49,7 @@ export default function CheckinScreen() {
     setOrganizing(true);
     setPrepareFailed(false);
     try {
-      const people = await listPeople(getDb());
+      const people = await listPeopleForExtraction(getDb());
       setDrafts(await organizeEntry({ text: raw, people, now: new Date(), modelId }));
       setRemoved([]);
       setSaveFailed(false);

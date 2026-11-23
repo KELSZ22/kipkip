@@ -12,6 +12,7 @@ export type DraftRecord = {
   dueAt: number | null;
   personId: number | null;
   personName: string | null;
+  isPrivate?: boolean;
 };
 
 /** A record the on-device model already validated. Omitted means rules only. */

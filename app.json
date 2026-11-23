@@ -39,6 +39,12 @@
         }
       ],
       "expo-secure-store",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Kipkip uses Face ID to open private records. They stay on this phone."
+        }
+      ],
       "llama.rn",
       [
         "expo-notifications",
@@ -63,7 +69,8 @@
           "enableBackgroundRecording": false,
           "enableBackgroundPlayback": false
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true,

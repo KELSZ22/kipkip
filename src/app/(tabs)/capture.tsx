@@ -10,7 +10,7 @@ import { TabScreen } from '@/components/tab-screen';
 import { ThemedText } from '@/components/themed-text';
 import { MinTouchTarget, Spacing } from '@/constants/theme';
 import { getDb } from '@/db/client';
-import { listPeople } from '@/db/repo/people';
+import { listPeopleForExtraction } from '@/db/repo/people';
 import { saveCapture } from '@/db/repo/records';
 import type { EntrySource } from '@/db/repo/entries';
 import { ConfirmCard } from '@/features/capture/confirm-card';
@@ -54,7 +54,7 @@ export default function CaptureScreen() {
     setPrepareFailed(false);
     setSaved(false);
     try {
-      const people = await listPeople(getDb());
+      const people = await listPeopleForExtraction(getDb());
       setDrafts(await organizeEntry({ text: raw, people, now: new Date(), modelId }));
       setRemoved([]);
       setSaveFailed(false);

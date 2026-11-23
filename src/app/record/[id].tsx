@@ -9,22 +9,32 @@ import { getDb } from '@/db/client';
 import {
   deleteRecord,
   getRecord,
+  setRecordPrivate,
   updateRecord,
   RECORD_STATUSES,
   type RecordItem,
   type RecordStatus,
 } from '@/db/repo/records';
+import { PrivateSwitch } from '@/features/vault/private-switch';
+import { requestVaultUnlock, type UnlockResult } from '@/features/vault/unlock';
+import { useVaultUnlocked } from '@/features/vault/use-vault';
 import { QuickActions } from '@/features/actions/quick-actions';
 import { resyncPromiseReminders } from '@/features/actions/reminders';
 import { RecordFields } from '@/features/records/record-fields';
 import { useTheme } from '@/hooks/use-theme';
-import { useT } from '@/lib/i18n';
+import { useT, type MessageKey } from '@/lib/i18n';
 
 type LoadState =
   | { status: 'loading' }
   | { status: 'missing' }
   | { status: 'ready'; draft: DraftRecord; recordStatus: RecordStatus; saved: RecordItem }
   | { status: 'failed' };
+
+const GATE_KEY: Record<Exclude<UnlockResult, 'ok'>, MessageKey> = {
+  cancelled: 'vault.cancelled',
+  unavailable: 'vault.unavailable',
+  needsBuild: 'vault.needsBuild',
+};
 
 function recordId(param: string | string[] | undefined): number {
   const raw = Array.isArray(param) ? param[0] : param;
@@ -34,6 +44,7 @@ function recordId(param: string | string[] | undefined): number {
 export default function RecordScreen() {
   const t = useT();
   const theme = useTheme();
+  const unlocked = useVaultUnlocked();
   const params = useLocalSearchParams<{ id: string }>();
   const id = recordId(params.id);
   const validId = Number.isInteger(id) && id > 0;
@@ -42,6 +53,7 @@ export default function RecordScreen() {
   const [reload, setReload] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
+  const [gate, setGate] = useState<UnlockResult | null>(null);
   const view: LoadState = !validId ? { status: 'missing' } : loadedFor === id ? load : { status: 'loading' };
 
   useEffect(() => {
@@ -106,6 +118,29 @@ export default function RecordScreen() {
     }
   };
 
+  const togglePrivate = async (isPrivate: boolean) => {
+    if (view.status !== 'ready' || saving) return;
+    setSaving(true);
+    setSaveFailed(false);
+    try {
+      await setRecordPrivate(getDb(), id, isPrivate, Date.now());
+      await resyncPromiseReminders().catch((error: unknown) => console.error(error));
+      setReload((current) => current + 1);
+    } catch (error) {
+      console.error(error);
+      setSaveFailed(true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const unlock = async () => {
+    const result = await requestVaultUnlock({ message: t('vault.unlockPrompt'), cancel: t('vault.cancel') });
+    setGate(result === 'ok' ? null : result);
+  };
+
+  const hidden = view.status === 'ready' && view.saved.isPrivate && !unlocked;
+
   const remove = () => {
     Alert.alert(t('records.deleteConfirm'), undefined, [
       { text: t('records.deleteNo'), style: 'cancel' },
@@ -133,9 +168,31 @@ export default function RecordScreen() {
       <Stack.Screen options={{ title: t('records.edit') }} />
       {view.status === 'missing' && <ThemedText>{t('records.missing')}</ThemedText>}
       {view.status === 'failed' && <ThemedText themeColor="danger">{t('records.loadFailed')}</ThemedText>}
-      {view.status === 'ready' && (
+      {hidden && (
+        <View style={styles.form}>
+          <ThemedText>{t('vault.locked')}</ThemedText>
+          {gate && gate !== 'ok' && <ThemedText themeColor="danger">{t(GATE_KEY[gate])}</ThemedText>}
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => void unlock()}
+            style={[styles.primary, { backgroundColor: theme.accent }]}>
+            <ThemedText type="smallBold" themeColor="onAccent">
+              {t('vault.unlock')}
+            </ThemedText>
+          </Pressable>
+        </View>
+      )}
+      {view.status === 'ready' && !hidden && (
         <View style={styles.form}>
           {saveFailed && <ThemedText themeColor="danger">{t('records.saveFailed')}</ThemedText>}
+          <PrivateSwitch
+            value={view.saved.isPrivate}
+            disabled={saving}
+            onChange={(next) => void togglePrivate(next)}
+          />
+          <ThemedText type="small" themeColor="textSecondary">
+            {t('vault.privateHint')}
+          </ThemedText>
           {!view.draft.title.trim() && <ThemedText themeColor="danger">{t('capture.needTitle')}</ThemedText>}
           <RecordFields
             value={view.draft}

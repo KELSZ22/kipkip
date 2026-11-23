@@ -64,6 +64,13 @@ export default function RecordsScreen() {
   return (
     <TabScreen title={t('records.title')}>
       <View style={styles.flex}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push('/vault' as Href)}
+          style={[styles.choice, { borderColor: theme.border }]}>
+          <ThemedText type="smallBold">{t('vault.open')}</ThemedText>
+        </Pressable>
+
         <View accessibilityRole="tablist" style={styles.row}>
           {TYPES.map((option) => {
             const selected = type === option;

@@ -9,6 +9,18 @@ export type LinkedContact = {
   email: string | null;
 };
 
+/** People named on a public record. Names that exist only in the vault are left out of extraction. */
+export async function listPeopleForExtraction(db: SqlRunner): Promise<PersonRow[]> {
+  const { rows } = await db.execute(
+    `SELECT DISTINCT p.id, p.display_name
+     FROM people p
+     JOIN records r ON r.person_id = p.id
+     WHERE r.is_private = 0
+     ORDER BY p.display_name COLLATE NOCASE, p.id`,
+  );
+  return rows.map((row) => ({ id: Number(row.id), displayName: String(row.display_name) }));
+}
+
 export async function listPeople(db: SqlRunner): Promise<PersonRow[]> {
   const { rows } = await db.execute('SELECT id, display_name FROM people ORDER BY display_name COLLATE NOCASE, id');
   return rows.map((row) => ({ id: Number(row.id), displayName: String(row.display_name) }));
@@ -19,7 +31,7 @@ export async function listPeopleWithRecords(db: SqlRunner, type: 'note' | 'promi
     `SELECT DISTINCT p.id, p.display_name
      FROM people p
      JOIN records r ON r.person_id = p.id
-     WHERE r.type = ?
+     WHERE r.type = ? AND r.is_private = 0
      ORDER BY p.display_name COLLATE NOCASE, p.id`,
     [type],
   );

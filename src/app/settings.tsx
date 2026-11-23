@@ -8,12 +8,22 @@ import { MinTouchTarget, Spacing } from '@/constants/theme';
 import { getDb, getDbInfo } from '@/db/client';
 import type { SettingKey, Settings } from '@/db/repo/settings';
 import { resyncPromiseReminders } from '@/features/actions/reminders';
+import { exportRecords } from '@/features/vault/run-export';
+import type { ShareResult } from '@/features/vault/share-export';
+import { requestVaultUnlock } from '@/features/vault/unlock';
 import { syncCheckin } from '@/features/checkin/schedule';
 import { useTheme } from '@/hooks/use-theme';
 import { useT, type MessageKey } from '@/lib/i18n';
 import { useSettings } from '@/lib/settings-store';
 import { formatTimeOfDay, shiftTimeOfDay } from '@/lib/time';
 import { TONES } from '@/lib/tone';
+
+const EXPORT_NOTE: Record<Exclude<ShareResult, 'shared'>, MessageKey> = {
+  empty: 'export.empty',
+  unavailable: 'export.unavailable',
+  failed: 'export.failed',
+  needsBuild: 'export.needsBuild',
+};
 
 export default function SettingsScreen() {
   const theme = useTheme();
@@ -22,6 +32,8 @@ export default function SettingsScreen() {
   const update = useSettings((state) => state.update);
   const [draftName, setDraftName] = useState(values.companion_name);
   const [saveFailed, setSaveFailed] = useState(false);
+  const [exportNote, setExportNote] = useState<MessageKey | null>(null);
+  const [exporting, setExporting] = useState(false);
   const dbInfo = getDbInfo();
 
   const save = async <K extends SettingKey>(key: K, value: Settings[K]) => {
@@ -53,6 +65,32 @@ export default function SettingsScreen() {
 
   const shiftCheckin = (minutes: number) =>
     save('checkin_time', shiftTimeOfDay(values.checkin_time, minutes));
+
+  const share = async (isPrivate: boolean) => {
+    if (exporting) return;
+    setExporting(true);
+    setExportNote(null);
+    try {
+      if (isPrivate) {
+        const gate = await requestVaultUnlock({ message: t('vault.unlockPrompt'), cancel: t('vault.cancel') });
+        if (gate !== 'ok') {
+          setExportNote(gate === 'needsBuild' ? 'vault.needsBuild' : gate === 'unavailable' ? 'vault.unavailable' : 'vault.cancelled');
+          return;
+        }
+      }
+      const result: ShareResult = await exportRecords({
+        db: getDb(),
+        isPrivate,
+        dialogTitle: t('export.dialog'),
+      });
+      if (result !== 'shared') setExportNote(EXPORT_NOTE[result]);
+    } catch (error) {
+      console.error(error);
+      setExportNote('export.failed');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <ScrollView
@@ -167,6 +205,36 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.section}>
+        <ThemedText type="smallBold">{t('export.title')}</ThemedText>
+        <ThemedText type="small" themeColor="textSecondary">
+          {t('export.hint')}
+        </ThemedText>
+        {exportNote && <ThemedText themeColor="danger">{t(exportNote)}</ThemedText>}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: exporting }}
+          disabled={exporting}
+          onPress={() => void share(false)}
+          style={[styles.option, { borderColor: theme.border }, exporting && styles.disabled]}>
+          <ThemedText type="smallBold">{t('export.public')}</ThemedText>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: exporting }}
+          disabled={exporting}
+          onPress={() => void share(true)}
+          style={[styles.option, { borderColor: theme.border }, exporting && styles.disabled]}>
+          <ThemedText type="smallBold">{t('export.private')}</ThemedText>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push('/vault')}
+          style={[styles.option, { borderColor: theme.border }]}>
+          <ThemedText type="smallBold">{t('vault.open')}</ThemedText>
+        </Pressable>
+      </View>
+
+      <View style={styles.section}>
         <ThemedText type="smallBold">{t('settings.privacy')}</ThemedText>
         <ThemedText>{t('settings.privacy.promise')}</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">
@@ -257,5 +325,8 @@ const styles = StyleSheet.create({
     borderRadius: Spacing.two,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  disabled: {
+    opacity: 0.4,
   },
 });
